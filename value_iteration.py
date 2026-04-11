@@ -124,3 +124,17 @@ class ValueIterationAgent:
                     else:
                         Q[s, a] += prob * (reward + self.gamma * self.V[next_s])
         return Q
+
+    def get_policy(self):
+        """
+        Retorna a politica atual.
+
+        Se a politica ainda nao foi extraida (por exemplo, antes de run()),
+        extrai a partir da funcao de valor corrente.
+        """
+        self._extract_policy()
+        return self.policy
+
+    def get_value_function(self):
+        """Retorna a funcao de valor atual V(s)."""
+        return self.V

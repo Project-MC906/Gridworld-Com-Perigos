@@ -130,6 +130,95 @@ class QLearningAgent:
         return np.max(self.Q, axis=1)
 
 
+class ExpectedSARSAAgent:
+    """
+    Agente Expected SARSA tabular com politica epsilon-greedy.
+
+    Diferente do Q-Learning, o alvo TD usa a expectativa sobre a politica
+    no proximo estado, reduzindo variancia da atualizacao.
+    """
+
+    def __init__(
+        self,
+        num_states,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.01,
+        epsilon_decay="exponential",
+        epsilon_decay_rate=0.995,
+        seed=42,
+        optimistic_init=0.0,
+    ):
+        self.num_states = num_states
+        self.alpha = alpha
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.epsilon_start = epsilon
+        self.epsilon_min = epsilon_min
+        self.epsilon_decay = epsilon_decay
+        self.epsilon_decay_rate = epsilon_decay_rate
+        self.rng = np.random.default_rng(seed)
+
+        if optimistic_init > 0:
+            self.Q = np.full((num_states, NUM_ACTIONS), optimistic_init, dtype=float)
+        else:
+            self.Q = np.zeros((num_states, NUM_ACTIONS), dtype=float)
+
+    def select_action(self, state):
+        """Seleciona acao usando politica epsilon-greedy."""
+        if self.rng.random() < self.epsilon:
+            return self.rng.integers(0, NUM_ACTIONS)
+
+        q_values = self.Q[state]
+        max_q = np.max(q_values)
+        best_actions = np.where(np.isclose(q_values, max_q))[0]
+        return self.rng.choice(best_actions)
+
+    def _epsilon_greedy_probs(self, state):
+        """Distribuicao de probabilidade da politica epsilon-greedy em um estado."""
+        probs = np.full(NUM_ACTIONS, self.epsilon / NUM_ACTIONS, dtype=float)
+        q_values = self.Q[state]
+        max_q = np.max(q_values)
+        best_actions = np.where(np.isclose(q_values, max_q))[0]
+        probs[best_actions] += (1.0 - self.epsilon) / len(best_actions)
+        return probs
+
+    def update(self, state, action, reward, next_state, done):
+        """
+        Atualiza Q(s,a) pela regra de Expected SARSA:
+
+        Q(s,a) <- Q(s,a) + alpha * [r + gamma * E_{a'~pi}[Q(s',a')] - Q(s,a)]
+        """
+        if done:
+            td_target = reward
+        else:
+            action_probs = self._epsilon_greedy_probs(next_state)
+            expected_next_q = np.dot(action_probs, self.Q[next_state])
+            td_target = reward + self.gamma * expected_next_q
+
+        td_error = td_target - self.Q[state, action]
+        self.Q[state, action] += self.alpha * td_error
+        return td_error
+
+    def decay_epsilon(self, episode=None, total_episodes=None):
+        """Aplica decaimento ao epsilon no final de cada episodio."""
+        if self.epsilon_decay == "exponential":
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay_rate)
+        elif self.epsilon_decay == "linear":
+            if total_episodes is not None and total_episodes > 0:
+                decay_per_episode = (self.epsilon_start - self.epsilon_min) / total_episodes
+                self.epsilon = max(self.epsilon_min, self.epsilon - decay_per_episode)
+
+    def get_policy(self):
+        """Retorna a politica gulosa derivada de Q."""
+        return np.argmax(self.Q, axis=1)
+
+    def get_value_function(self):
+        """Retorna V(s) = max_a Q(s,a)."""
+        return np.max(self.Q, axis=1)
+
+
 class DoubleQLearningAgent:
     """
     Agente Double Q-Learning tabular.

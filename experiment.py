@@ -9,8 +9,9 @@ Responsavel por:
 """
 
 import numpy as np
+from itertools import product
 from gridworld_env import GridworldEnv, GOAL
-from q_learning import QLearningAgent, DoubleQLearningAgent
+from q_learning import QLearningAgent, DoubleQLearningAgent, ExpectedSARSAAgent
 from value_iteration import ValueIterationAgent
 
 
@@ -170,7 +171,7 @@ def run_experiment_multiple_seeds(
     Parametros
     ----------
     agent_type : str
-        'q_learning' ou 'double_q_learning'.
+        'q_learning', 'double_q_learning' ou 'expected_sarsa'.
     seeds : list of int
         Lista de seeds para replicacao estatistica.
 
@@ -197,7 +198,16 @@ def run_experiment_multiple_seeds(
             seed=seed,
         )
 
-        AgentClass = DoubleQLearningAgent if agent_type == "double_q_learning" else QLearningAgent
+        if agent_type == "q_learning":
+            AgentClass = QLearningAgent
+        elif agent_type == "double_q_learning":
+            AgentClass = DoubleQLearningAgent
+        elif agent_type == "expected_sarsa":
+            AgentClass = ExpectedSARSAAgent
+        else:
+            raise ValueError(
+                "agent_type invalido. Use 'q_learning', 'double_q_learning' ou 'expected_sarsa'."
+            )
 
         agent = AgentClass(
             num_states=env.num_states,
@@ -269,3 +279,85 @@ def aggregate_metrics(all_metrics):
         "td_errors_std": np.std(td_errors_matrix, axis=0),
         "num_episodes": num_episodes,
     }
+
+
+def grid_search_hyperparameters(
+    grid_layout,
+    slip_prob,
+    agent_type="q_learning",
+    search_space=None,
+    num_episodes=1500,
+    max_steps=200,
+    seeds=None,
+):
+    """
+    Busca em grade (grid search) para hiperparametros do agente.
+
+    A metrica de ordenacao prioriza sucesso e recompensa,
+    com pequena penalizacao para trajetorias longas.
+
+    Retorna
+    -------
+    best_result : dict
+        Melhor configuracao encontrada.
+    all_results : list of dict
+        Todas as configuracoes testadas, ordenadas por score decrescente.
+    """
+    if seeds is None:
+        seeds = [42, 123, 456]
+
+    if search_space is None:
+        search_space = {
+            "alpha": [0.05, 0.1, 0.3],
+            "gamma": [0.9, 0.95, 0.99],
+            "epsilon_min": [0.01, 0.05],
+            "epsilon_decay": ["exponential", "linear"],
+            "epsilon_decay_rate": [0.995, 0.99],
+        }
+
+    keys = [
+        "alpha",
+        "gamma",
+        "epsilon_min",
+        "epsilon_decay",
+        "epsilon_decay_rate",
+    ]
+    values = [search_space[k] for k in keys]
+
+    all_results = []
+    for combo in product(*values):
+        params = dict(zip(keys, combo))
+        _, eval_results = run_experiment_multiple_seeds(
+            grid_layout=grid_layout,
+            slip_prob=slip_prob,
+            agent_type=agent_type,
+            alpha=params["alpha"],
+            gamma=params["gamma"],
+            epsilon=1.0,
+            epsilon_min=params["epsilon_min"],
+            epsilon_decay=params["epsilon_decay"],
+            epsilon_decay_rate=params["epsilon_decay_rate"],
+            num_episodes=num_episodes,
+            max_steps=max_steps,
+            seeds=seeds,
+            verbose=False,
+        )
+
+        mean_reward = np.mean([e["mean_reward"] for e in eval_results])
+        success_rate = np.mean([e["success_rate"] for e in eval_results])
+        mean_steps = np.mean([e["mean_steps"] for e in eval_results])
+
+        score = mean_reward + 0.75 * success_rate - 0.01 * mean_steps
+
+        all_results.append(
+            {
+                "params": params,
+                "score": score,
+                "mean_reward": mean_reward,
+                "success_rate": success_rate,
+                "mean_steps": mean_steps,
+            }
+        )
+
+    all_results.sort(key=lambda x: x["score"], reverse=True)
+    return all_results[0], all_results

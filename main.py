@@ -5,8 +5,9 @@ Executa:
 1. Value Iteration (planejamento off-line com modelo completo)
 2. Q-Learning (aprendizado empírico livre de modelo)
 3. Double Q-Learning (mitigacao do vies de superestimacao)
-4. Comparacoes de hiperparametros (gamma, alpha, epsilon decay)
-5. Geracao de todas as visualizacoes
+4. Expected SARSA (controle on-policy em modelo livre)
+5. Comparacoes de hiperparametros (incluindo grid search)
+6. Geracao de todas as visualizacoes
 
 Uso:
     python main.py
@@ -23,6 +24,7 @@ from experiment import (
     evaluate_policy,
     run_experiment_multiple_seeds,
     aggregate_metrics,
+    grid_search_hyperparameters,
 )
 from visualization import (
     plot_value_heatmap,
@@ -114,14 +116,14 @@ def run_value_iteration_experiments():
 # ============================================================
 def run_qlearning_experiments():
     print("\n" + "=" * 70)
-    print("PARTE 2: Q-LEARNING vs DOUBLE Q-LEARNING")
+    print("PARTE 2: Q-LEARNING vs DOUBLE Q-LEARNING vs EXPECTED SARSA")
     print("=" * 70)
 
     for grid_name, grid_layout, slip in [
         ("4x4_stoch", GRID_4x4, 0.2),
         ("8x8_stoch", GRID_8x8, 0.2),
     ]:
-        print(f"\n--- Comparacao Q vs Double-Q: {grid_name} (slip={slip}) ---")
+        print(f"\n--- Comparacao Q vs Double-Q vs Expected SARSA: {grid_name} (slip={slip}) ---")
 
         all_aggregated = {}
         all_eval = {}
@@ -129,6 +131,7 @@ def run_qlearning_experiments():
         for agent_type, label in [
             ("q_learning", "Q-Learning"),
             ("double_q_learning", "Double Q-Learning"),
+            ("expected_sarsa", "Expected SARSA"),
         ]:
             metrics_list, eval_list = run_experiment_multiple_seeds(
                 grid_layout=grid_layout,
@@ -166,8 +169,8 @@ def run_qlearning_experiments():
         # Curvas de aprendizado comparativas
         plot_learning_curves(
             all_aggregated,
-            title_prefix=f"Q-Learning vs Double Q-Learning - {grid_name}",
-            filename=f"{OUTPUT_DIR}/comparison_q_vs_dq_{grid_name}.png",
+            title_prefix=f"Q-Learning vs Double Q-Learning vs Expected SARSA - {grid_name}",
+            filename=f"{OUTPUT_DIR}/comparison_q_vs_dq_vs_es_{grid_name}.png",
         )
 
         # Barras comparativas
@@ -176,7 +179,7 @@ def run_qlearning_experiments():
             filename=f"{OUTPUT_DIR}/eval_bar_{grid_name}.png",
         )
 
-        # Visualizar politica final do melhor agente (Q-Learning)
+        # Visualizar politica final de referencia (Q-Learning)
         env = GridworldEnv(grid_layout=grid_layout, slip_prob=slip, seed=42)
         agent = QLearningAgent(
             num_states=env.num_states, alpha=0.1, gamma=0.99,
@@ -298,13 +301,51 @@ def run_hyperparameter_study():
         filename=f"{OUTPUT_DIR}/hp_epsilon_comparison.png",
     )
 
+    # --- 3d. Busca em grade (grid search) ---
+    print("\n--- 3d. Busca em Grade de Hiperparametros (Q-Learning, Double Q, Expected SARSA) ---")
+    search_space = {
+        "alpha": [0.05, 0.1, 0.3],
+        "gamma": [0.9, 0.99],
+        "epsilon_min": [0.01, 0.05],
+        "epsilon_decay": ["exponential"],
+        "epsilon_decay_rate": [0.995, 0.99],
+    }
+
+    for agent_type, label in [
+        ("q_learning", "Q-Learning"),
+        ("double_q_learning", "Double Q-Learning"),
+        ("expected_sarsa", "Expected SARSA"),
+    ]:
+        best_result, _ = grid_search_hyperparameters(
+            grid_layout=grid_layout,
+            slip_prob=slip,
+            agent_type=agent_type,
+            search_space=search_space,
+            num_episodes=1200,
+            max_steps=MAX_STEPS,
+            seeds=SEEDS[:3],
+        )
+
+        p = best_result["params"]
+        print(
+            f"  {label:17s} | score={best_result['score']:.3f} | "
+            f"reward={best_result['mean_reward']:.3f} | "
+            f"success={best_result['success_rate']:.2%} | "
+            f"steps={best_result['mean_steps']:.1f}"
+        )
+        print(
+            f"    melhor config: alpha={p['alpha']}, gamma={p['gamma']}, "
+            f"eps_min={p['epsilon_min']}, decay={p['epsilon_decay']}, "
+            f"decay_rate={p['epsilon_decay_rate']}"
+        )
+
 
 # ============================================================
 # PARTE 4: Comparacao Final VI vs Q-Learning vs Double Q-Learning
 # ============================================================
 def run_final_comparison():
     print("\n" + "=" * 70)
-    print("PARTE 4: COMPARACAO FINAL - VI vs Q-Learning vs Double Q-Learning")
+    print("PARTE 4: COMPARACAO FINAL - VI vs Q-Learning vs Double Q-Learning vs Expected SARSA")
     print("=" * 70)
 
     grid_layout = GRID_4x4
@@ -346,6 +387,16 @@ def run_final_comparison():
         verbose=True,
     )
 
+    # Expected SARSA
+    es_metrics_list, es_eval_list = run_experiment_multiple_seeds(
+        grid_layout=grid_layout, slip_prob=slip,
+        agent_type="expected_sarsa", alpha=0.1, gamma=0.99,
+        epsilon=1.0, epsilon_min=0.01,
+        epsilon_decay="exponential", epsilon_decay_rate=0.995,
+        num_episodes=NUM_EPISODES, max_steps=MAX_STEPS, seeds=SEEDS,
+        verbose=True,
+    )
+
     # Comparacao de avaliacao
     final_eval = {
         "Value Iteration": {
@@ -362,6 +413,11 @@ def run_final_comparison():
             "mean_reward": np.mean([e["mean_reward"] for e in dq_eval_list]),
             "success_rate": np.mean([e["success_rate"] for e in dq_eval_list]),
             "mean_steps": np.mean([e["mean_steps"] for e in dq_eval_list]),
+        },
+        "Expected SARSA": {
+            "mean_reward": np.mean([e["mean_reward"] for e in es_eval_list]),
+            "success_rate": np.mean([e["success_rate"] for e in es_eval_list]),
+            "mean_steps": np.mean([e["mean_steps"] for e in es_eval_list]),
         },
     }
 
@@ -383,8 +439,9 @@ def run_final_comparison():
         {
             "Q-Learning": aggregate_metrics(q_metrics_list),
             "Double Q-Learning": aggregate_metrics(dq_metrics_list),
+            "Expected SARSA": aggregate_metrics(es_metrics_list),
         },
-        title_prefix="Q-Learning vs Double Q-Learning (4x4, slip=0.2)",
+        title_prefix="Q-Learning vs Double Q-Learning vs Expected SARSA (4x4, slip=0.2)",
         filename=f"{OUTPUT_DIR}/final_learning_curves.png",
     )
 

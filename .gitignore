@@ -1,1 +1,23 @@
-__pycache__
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+
+# Virtual environment (this repository currently embeds one)
+bin/
+include/
+lib/
+lib64/
+share/
+pyvenv.cfg
+
+# Experiment outputs
+resultados/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+
+share/
+
+lib64
