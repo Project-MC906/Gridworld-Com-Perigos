@@ -54,6 +54,7 @@ def train_agent(
         "successes": [],
         "td_errors": [],
         "epsilons": [],
+        "exploration_values": [],
     }
 
     for episode in range(num_episodes):
@@ -86,7 +87,8 @@ def train_agent(
         metrics["steps"].append(step + 1)
         metrics["successes"].append(success)
         metrics["td_errors"].append(np.mean(td_errors_ep) if td_errors_ep else 0.0)
-        metrics["epsilons"].append(agent.epsilon)
+        metrics["epsilons"].append(getattr(agent, "epsilon", 0.0))
+        metrics["exploration_values"].append(agent.get_exploration_value())
 
         if verbose and (episode + 1) % 500 == 0:
             recent_rewards = metrics["rewards"][-100:]
@@ -159,6 +161,11 @@ def run_experiment_multiple_seeds(
     epsilon_min=0.01,
     epsilon_decay="exponential",
     epsilon_decay_rate=0.995,
+    exploration_strategy="epsilon_greedy",
+    temperature=1.0,
+    temperature_min=0.05,
+    temperature_decay="exponential",
+    temperature_decay_rate=0.995,
     optimistic_init=0.0,
     num_episodes=5000,
     max_steps=200,
@@ -217,6 +224,11 @@ def run_experiment_multiple_seeds(
             epsilon_min=epsilon_min,
             epsilon_decay=epsilon_decay,
             epsilon_decay_rate=epsilon_decay_rate,
+            exploration_strategy=exploration_strategy,
+            temperature=temperature,
+            temperature_min=temperature_min,
+            temperature_decay=temperature_decay,
+            temperature_decay_rate=temperature_decay_rate,
             seed=seed,
             optimistic_init=optimistic_init,
         )
@@ -268,6 +280,7 @@ def aggregate_metrics(all_metrics):
     steps_matrix = np.array([m["steps"] for m in all_metrics])
     successes_matrix = np.array([m["successes"] for m in all_metrics])
     td_errors_matrix = np.array([m["td_errors"] for m in all_metrics])
+    exploration_matrix = np.array([m["exploration_values"] for m in all_metrics])
 
     return {
         "rewards_mean": np.mean(rewards_matrix, axis=0),
@@ -277,6 +290,8 @@ def aggregate_metrics(all_metrics):
         "successes_mean": np.mean(successes_matrix, axis=0),
         "td_errors_mean": np.mean(td_errors_matrix, axis=0),
         "td_errors_std": np.std(td_errors_matrix, axis=0),
+        "exploration_mean": np.mean(exploration_matrix, axis=0),
+        "exploration_std": np.std(exploration_matrix, axis=0),
         "num_episodes": num_episodes,
     }
 

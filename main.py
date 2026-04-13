@@ -341,6 +341,92 @@ def run_hyperparameter_study():
 
 
 # ============================================================
+# PARTE 3E: Comparacao de Estrategias de Exploracao
+# ============================================================
+def run_exploration_strategy_comparison():
+    print("\n" + "=" * 70)
+    print("PARTE 3E: COMPARACAO DE ESTRATEGIAS DE EXPLORACAO")
+    print("=" * 70)
+
+    grid_layout = GRID_4x4
+    slip = 0.2
+
+    strategies = [
+        (
+            "epsilon_greedy",
+            "Epsilon-Greedy",
+            {
+                "epsilon": 1.0,
+                "epsilon_min": 0.01,
+                "epsilon_decay": "exponential",
+                "epsilon_decay_rate": 0.995,
+            },
+        ),
+        (
+            "softmax",
+            "Softmax (Boltzmann)",
+            {
+                "temperature": 1.0,
+                "temperature_min": 0.05,
+                "temperature_decay": "exponential",
+                "temperature_decay_rate": 0.995,
+            },
+        ),
+    ]
+
+    for agent_type, agent_label in [
+        ("q_learning", "Q-Learning"),
+        ("double_q_learning", "Double Q-Learning"),
+        ("expected_sarsa", "Expected SARSA"),
+    ]:
+        print(f"\n--- {agent_label}: epsilon-greedy vs softmax ---")
+
+        strategy_curves = {}
+        strategy_eval = {}
+
+        for strategy_key, strategy_label, strategy_cfg in strategies:
+            experiment_kwargs = dict(
+                grid_layout=grid_layout,
+                slip_prob=slip,
+                agent_type=agent_type,
+                alpha=0.1,
+                gamma=0.99,
+                exploration_strategy=strategy_key,
+                num_episodes=NUM_EPISODES,
+                max_steps=MAX_STEPS,
+                seeds=SEEDS,
+                verbose=False,
+            )
+            experiment_kwargs.update(strategy_cfg)
+            metrics_list, eval_list = run_experiment_multiple_seeds(**experiment_kwargs)
+
+            strategy_curves[strategy_label] = aggregate_metrics(metrics_list)
+            strategy_eval[strategy_label] = {
+                "mean_reward": np.mean([e["mean_reward"] for e in eval_list]),
+                "success_rate": np.mean([e["success_rate"] for e in eval_list]),
+                "mean_steps": np.mean([e["mean_steps"] for e in eval_list]),
+            }
+
+            print(
+                f"  {strategy_label:20s} | "
+                f"Reward={strategy_eval[strategy_label]['mean_reward']:.3f} | "
+                f"Success={strategy_eval[strategy_label]['success_rate']:.2%} | "
+                f"Steps={strategy_eval[strategy_label]['mean_steps']:.1f}"
+            )
+
+        plot_learning_curves(
+            strategy_curves,
+            title_prefix=f"Comparacao de Exploracao - {agent_label}",
+            filename=f"{OUTPUT_DIR}/exploration_learning_{agent_type}.png",
+        )
+
+        plot_comparison_bar(
+            strategy_eval,
+            filename=f"{OUTPUT_DIR}/exploration_eval_{agent_type}.png",
+        )
+
+
+# ============================================================
 # PARTE 4: Comparacao Final VI vs Q-Learning vs Double Q-Learning
 # ============================================================
 def run_final_comparison():
@@ -467,6 +553,7 @@ if __name__ == "__main__":
     run_value_iteration_experiments()
     run_qlearning_experiments()
     run_hyperparameter_study()
+    run_exploration_strategy_comparison()
     run_final_comparison()
 
     print("\n" + "=" * 70)

@@ -30,6 +30,16 @@ class QLearningAgent:
     epsilon_decay_rate : float
         Taxa de decaimento (para exponencial) ou numero total de episodios para
         atingir epsilon_min (para linear).
+    exploration_strategy : str
+        Estrategia de exploracao: 'epsilon_greedy' ou 'softmax'.
+    temperature : float
+        Temperatura inicial da politica softmax (Boltzmann).
+    temperature_min : float
+        Piso minimo para temperatura na estrategia softmax.
+    temperature_decay : str
+        Estrategia de decaimento da temperatura: 'none', 'linear', 'exponential'.
+    temperature_decay_rate : float
+        Taxa de decaimento da temperatura (para exponencial).
     seed : int or None
         Semente para reprodutibilidade.
     optimistic_init : float
@@ -45,6 +55,11 @@ class QLearningAgent:
         epsilon_min=0.01,
         epsilon_decay="exponential",
         epsilon_decay_rate=0.995,
+        exploration_strategy="epsilon_greedy",
+        temperature=1.0,
+        temperature_min=0.05,
+        temperature_decay="exponential",
+        temperature_decay_rate=0.995,
         seed=42,
         optimistic_init=0.0,
     ):
@@ -56,6 +71,12 @@ class QLearningAgent:
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         self.epsilon_decay_rate = epsilon_decay_rate
+        self.exploration_strategy = exploration_strategy
+        self.temperature = temperature
+        self.temperature_start = temperature
+        self.temperature_min = temperature_min
+        self.temperature_decay = temperature_decay
+        self.temperature_decay_rate = temperature_decay_rate
         self.rng = np.random.default_rng(seed)
 
         # Inicializacao da tabela Q
@@ -66,19 +87,36 @@ class QLearningAgent:
 
     def select_action(self, state):
         """
-        Seleciona acao usando politica epsilon-greedy.
+        Seleciona acao usando estrategia de exploracao configurada.
 
-        Com probabilidade epsilon: acao aleatoria (exploracao).
-        Caso contrario: acao gulosa baseada em Q(s,a) (explotacao).
+        - epsilon_greedy: com probabilidade epsilon, escolhe acao aleatoria.
+        - softmax: amostra acao por distribuicao de Boltzmann sobre Q(s,a).
         """
-        if self.rng.random() < self.epsilon:
-            return self.rng.integers(0, NUM_ACTIONS)
-        else:
+        if self.exploration_strategy == "epsilon_greedy":
+            if self.rng.random() < self.epsilon:
+                return self.rng.integers(0, NUM_ACTIONS)
+
             # Desempate aleatorio entre acoes de mesmo valor
             q_values = self.Q[state]
             max_q = np.max(q_values)
             best_actions = np.where(np.isclose(q_values, max_q))[0]
             return self.rng.choice(best_actions)
+
+        if self.exploration_strategy == "softmax":
+            q_values = self.Q[state]
+            probs = self._softmax_probs(q_values)
+            return self.rng.choice(np.arange(NUM_ACTIONS), p=probs)
+
+        raise ValueError(
+            "exploration_strategy invalida. Use 'epsilon_greedy' ou 'softmax'."
+        )
+
+    def _softmax_probs(self, q_values):
+        """Calcula probabilidades da politica de Boltzmann para um vetor Q."""
+        temp = max(self.temperature, 1e-8)
+        shifted = q_values - np.max(q_values)
+        exps = np.exp(shifted / temp)
+        return exps / np.sum(exps)
 
     def update(self, state, action, reward, next_state, done):
         """
@@ -102,7 +140,7 @@ class QLearningAgent:
 
     def decay_epsilon(self, episode=None, total_episodes=None):
         """
-        Aplica decaimento ao epsilon no final de cada episodio.
+        Aplica decaimento no parametro de exploracao ao final de cada episodio.
 
         Parametros
         ----------
@@ -111,15 +149,41 @@ class QLearningAgent:
         total_episodes : int
             Total de episodios (para decaimento linear).
         """
-        if self.epsilon_decay == "exponential":
-            self.epsilon = max(
-                self.epsilon_min, self.epsilon * self.epsilon_decay_rate
-            )
-        elif self.epsilon_decay == "linear":
-            if total_episodes is not None and total_episodes > 0:
-                decay_per_episode = (self.epsilon_start - self.epsilon_min) / total_episodes
-                self.epsilon = max(self.epsilon_min, self.epsilon - decay_per_episode)
-        # 'none': epsilon fixo, nao decai
+        if self.exploration_strategy == "epsilon_greedy":
+            if self.epsilon_decay == "exponential":
+                self.epsilon = max(
+                    self.epsilon_min, self.epsilon * self.epsilon_decay_rate
+                )
+            elif self.epsilon_decay == "linear":
+                if total_episodes is not None and total_episodes > 0:
+                    decay_per_episode = (self.epsilon_start - self.epsilon_min) / total_episodes
+                    self.epsilon = max(self.epsilon_min, self.epsilon - decay_per_episode)
+            # 'none': epsilon fixo, nao decai
+            return
+
+        if self.exploration_strategy == "softmax":
+            if self.temperature_decay == "exponential":
+                self.temperature = max(
+                    self.temperature_min,
+                    self.temperature * self.temperature_decay_rate,
+                )
+            elif self.temperature_decay == "linear":
+                if total_episodes is not None and total_episodes > 0:
+                    decay_per_episode = (
+                        self.temperature_start - self.temperature_min
+                    ) / total_episodes
+                    self.temperature = max(
+                        self.temperature_min,
+                        self.temperature - decay_per_episode,
+                    )
+            # 'none': temperatura fixa, nao decai
+            return
+
+    def get_exploration_value(self):
+        """Retorna o parametro de exploracao atual (epsilon ou temperatura)."""
+        if self.exploration_strategy == "softmax":
+            return self.temperature
+        return self.epsilon
 
     def get_policy(self):
         """Retorna a politica gulosa derivada de Q."""
@@ -147,6 +211,11 @@ class ExpectedSARSAAgent:
         epsilon_min=0.01,
         epsilon_decay="exponential",
         epsilon_decay_rate=0.995,
+        exploration_strategy="epsilon_greedy",
+        temperature=1.0,
+        temperature_min=0.05,
+        temperature_decay="exponential",
+        temperature_decay_rate=0.995,
         seed=42,
         optimistic_init=0.0,
     ):
@@ -158,6 +227,12 @@ class ExpectedSARSAAgent:
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         self.epsilon_decay_rate = epsilon_decay_rate
+        self.exploration_strategy = exploration_strategy
+        self.temperature = temperature
+        self.temperature_start = temperature
+        self.temperature_min = temperature_min
+        self.temperature_decay = temperature_decay
+        self.temperature_decay_rate = temperature_decay_rate
         self.rng = np.random.default_rng(seed)
 
         if optimistic_init > 0:
@@ -166,14 +241,30 @@ class ExpectedSARSAAgent:
             self.Q = np.zeros((num_states, NUM_ACTIONS), dtype=float)
 
     def select_action(self, state):
-        """Seleciona acao usando politica epsilon-greedy."""
-        if self.rng.random() < self.epsilon:
-            return self.rng.integers(0, NUM_ACTIONS)
+        """Seleciona acao usando estrategia de exploracao configurada."""
+        if self.exploration_strategy == "epsilon_greedy":
+            if self.rng.random() < self.epsilon:
+                return self.rng.integers(0, NUM_ACTIONS)
 
-        q_values = self.Q[state]
-        max_q = np.max(q_values)
-        best_actions = np.where(np.isclose(q_values, max_q))[0]
-        return self.rng.choice(best_actions)
+            q_values = self.Q[state]
+            max_q = np.max(q_values)
+            best_actions = np.where(np.isclose(q_values, max_q))[0]
+            return self.rng.choice(best_actions)
+
+        if self.exploration_strategy == "softmax":
+            probs = self._softmax_probs(self.Q[state])
+            return self.rng.choice(np.arange(NUM_ACTIONS), p=probs)
+
+        raise ValueError(
+            "exploration_strategy invalida. Use 'epsilon_greedy' ou 'softmax'."
+        )
+
+    def _softmax_probs(self, q_values):
+        """Distribuicao de probabilidades da politica softmax."""
+        temp = max(self.temperature, 1e-8)
+        shifted = q_values - np.max(q_values)
+        exps = np.exp(shifted / temp)
+        return exps / np.sum(exps)
 
     def _epsilon_greedy_probs(self, state):
         """Distribuicao de probabilidade da politica epsilon-greedy em um estado."""
@@ -193,7 +284,14 @@ class ExpectedSARSAAgent:
         if done:
             td_target = reward
         else:
-            action_probs = self._epsilon_greedy_probs(next_state)
+            if self.exploration_strategy == "epsilon_greedy":
+                action_probs = self._epsilon_greedy_probs(next_state)
+            elif self.exploration_strategy == "softmax":
+                action_probs = self._softmax_probs(self.Q[next_state])
+            else:
+                raise ValueError(
+                    "exploration_strategy invalida. Use 'epsilon_greedy' ou 'softmax'."
+                )
             expected_next_q = np.dot(action_probs, self.Q[next_state])
             td_target = reward + self.gamma * expected_next_q
 
@@ -202,13 +300,37 @@ class ExpectedSARSAAgent:
         return td_error
 
     def decay_epsilon(self, episode=None, total_episodes=None):
-        """Aplica decaimento ao epsilon no final de cada episodio."""
-        if self.epsilon_decay == "exponential":
-            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay_rate)
-        elif self.epsilon_decay == "linear":
-            if total_episodes is not None and total_episodes > 0:
-                decay_per_episode = (self.epsilon_start - self.epsilon_min) / total_episodes
-                self.epsilon = max(self.epsilon_min, self.epsilon - decay_per_episode)
+        """Aplica decaimento no parametro de exploracao no final de cada episodio."""
+        if self.exploration_strategy == "epsilon_greedy":
+            if self.epsilon_decay == "exponential":
+                self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay_rate)
+            elif self.epsilon_decay == "linear":
+                if total_episodes is not None and total_episodes > 0:
+                    decay_per_episode = (self.epsilon_start - self.epsilon_min) / total_episodes
+                    self.epsilon = max(self.epsilon_min, self.epsilon - decay_per_episode)
+            return
+
+        if self.exploration_strategy == "softmax":
+            if self.temperature_decay == "exponential":
+                self.temperature = max(
+                    self.temperature_min,
+                    self.temperature * self.temperature_decay_rate,
+                )
+            elif self.temperature_decay == "linear":
+                if total_episodes is not None and total_episodes > 0:
+                    decay_per_episode = (
+                        self.temperature_start - self.temperature_min
+                    ) / total_episodes
+                    self.temperature = max(
+                        self.temperature_min,
+                        self.temperature - decay_per_episode,
+                    )
+
+    def get_exploration_value(self):
+        """Retorna o parametro de exploracao atual (epsilon ou temperatura)."""
+        if self.exploration_strategy == "softmax":
+            return self.temperature
+        return self.epsilon
 
     def get_policy(self):
         """Retorna a politica gulosa derivada de Q."""
@@ -240,6 +362,11 @@ class DoubleQLearningAgent:
         epsilon_min=0.01,
         epsilon_decay="exponential",
         epsilon_decay_rate=0.995,
+        exploration_strategy="epsilon_greedy",
+        temperature=1.0,
+        temperature_min=0.05,
+        temperature_decay="exponential",
+        temperature_decay_rate=0.995,
         seed=42,
         optimistic_init=0.0,
     ):
@@ -251,6 +378,12 @@ class DoubleQLearningAgent:
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         self.epsilon_decay_rate = epsilon_decay_rate
+        self.exploration_strategy = exploration_strategy
+        self.temperature = temperature
+        self.temperature_start = temperature
+        self.temperature_min = temperature_min
+        self.temperature_decay = temperature_decay
+        self.temperature_decay_rate = temperature_decay_rate
         self.rng = np.random.default_rng(seed)
 
         # Duas tabelas Q independentes
@@ -263,15 +396,32 @@ class DoubleQLearningAgent:
 
     def select_action(self, state):
         """
-        Seleciona acao usando epsilon-greedy sobre Q1 + Q2.
+        Seleciona acao usando estrategia de exploracao sobre Q1 + Q2.
         """
-        if self.rng.random() < self.epsilon:
-            return self.rng.integers(0, NUM_ACTIONS)
-        else:
-            q_combined = self.Q1[state] + self.Q2[state]
+        q_combined = self.Q1[state] + self.Q2[state]
+
+        if self.exploration_strategy == "epsilon_greedy":
+            if self.rng.random() < self.epsilon:
+                return self.rng.integers(0, NUM_ACTIONS)
+
             max_q = np.max(q_combined)
             best_actions = np.where(np.isclose(q_combined, max_q))[0]
             return self.rng.choice(best_actions)
+
+        if self.exploration_strategy == "softmax":
+            probs = self._softmax_probs(q_combined)
+            return self.rng.choice(np.arange(NUM_ACTIONS), p=probs)
+
+        raise ValueError(
+            "exploration_strategy invalida. Use 'epsilon_greedy' ou 'softmax'."
+        )
+
+    def _softmax_probs(self, q_values):
+        """Distribuicao de probabilidades da politica softmax."""
+        temp = max(self.temperature, 1e-8)
+        shifted = q_values - np.max(q_values)
+        exps = np.exp(shifted / temp)
+        return exps / np.sum(exps)
 
     def update(self, state, action, reward, next_state, done):
         """
@@ -312,15 +462,39 @@ class DoubleQLearningAgent:
         return td_error
 
     def decay_epsilon(self, episode=None, total_episodes=None):
-        """Aplica decaimento ao epsilon no final de cada episodio."""
-        if self.epsilon_decay == "exponential":
-            self.epsilon = max(
-                self.epsilon_min, self.epsilon * self.epsilon_decay_rate
-            )
-        elif self.epsilon_decay == "linear":
-            if total_episodes is not None and total_episodes > 0:
-                decay_per_episode = (self.epsilon_start - self.epsilon_min) / total_episodes
-                self.epsilon = max(self.epsilon_min, self.epsilon - decay_per_episode)
+        """Aplica decaimento no parametro de exploracao no final de cada episodio."""
+        if self.exploration_strategy == "epsilon_greedy":
+            if self.epsilon_decay == "exponential":
+                self.epsilon = max(
+                    self.epsilon_min, self.epsilon * self.epsilon_decay_rate
+                )
+            elif self.epsilon_decay == "linear":
+                if total_episodes is not None and total_episodes > 0:
+                    decay_per_episode = (self.epsilon_start - self.epsilon_min) / total_episodes
+                    self.epsilon = max(self.epsilon_min, self.epsilon - decay_per_episode)
+            return
+
+        if self.exploration_strategy == "softmax":
+            if self.temperature_decay == "exponential":
+                self.temperature = max(
+                    self.temperature_min,
+                    self.temperature * self.temperature_decay_rate,
+                )
+            elif self.temperature_decay == "linear":
+                if total_episodes is not None and total_episodes > 0:
+                    decay_per_episode = (
+                        self.temperature_start - self.temperature_min
+                    ) / total_episodes
+                    self.temperature = max(
+                        self.temperature_min,
+                        self.temperature - decay_per_episode,
+                    )
+
+    def get_exploration_value(self):
+        """Retorna o parametro de exploracao atual (epsilon ou temperatura)."""
+        if self.exploration_strategy == "softmax":
+            return self.temperature
+        return self.epsilon
 
     def get_policy(self):
         """Retorna a politica gulosa derivada de (Q1 + Q2) / 2."""

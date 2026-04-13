@@ -21,3 +21,5 @@ resultados/
 share/
 
 lib64
+
+*.pdf
