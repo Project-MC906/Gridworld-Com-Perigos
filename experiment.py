@@ -10,9 +10,10 @@ Responsavel por:
 
 import numpy as np
 from itertools import product
-from gridworld_env import GridworldEnv, GOAL
-from q_learning import QLearningAgent, DoubleQLearningAgent, ExpectedSARSAAgent
-from value_iteration import ValueIterationAgent
+from envs.gridworld_env import GridworldEnv, GOAL
+from agents.q_learning import QLearningAgent, DoubleQLearningAgent, ExpectedSARSAAgent
+from agents.value_iteration import ValueIterationAgent
+from agents.dqn.dqn_agent import DQNAgent
 
 
 def train_agent(
@@ -211,9 +212,12 @@ def run_experiment_multiple_seeds(
             AgentClass = DoubleQLearningAgent
         elif agent_type == "expected_sarsa":
             AgentClass = ExpectedSARSAAgent
+        elif agent_type == "dqn":
+            AgentClass = DQNAgent
         else:
             raise ValueError(
-                "agent_type invalido. Use 'q_learning', 'double_q_learning' ou 'expected_sarsa'."
+                "agent_type invalido. Use 'q_learning', 'double_q_learning', "
+                "'expected_sarsa' ou 'dqn'."
             )
 
         agent = AgentClass(

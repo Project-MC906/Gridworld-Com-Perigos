@@ -10,10 +10,12 @@ Gera:
 """
 
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # backend sem display — salva arquivos sem abrir janelas
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.colors import Normalize
-from gridworld_env import (
+from envs.gridworld_env import (
     WALL, TRAP, GOAL, START, EMPTY,
     UP, RIGHT, DOWN, LEFT, ACTION_NAMES, NUM_ACTIONS,
 )
@@ -103,7 +105,6 @@ def plot_value_heatmap(env, V, title="Funcao de Valor V(s)", filename=None, ax=N
         plt.tight_layout()
         if filename:
             plt.savefig(filename, dpi=150, bbox_inches="tight")
-        plt.show()
 
 
 def plot_policy_arrows(env, policy, V=None, title="Politica pi(s)", filename=None, ax=None):
@@ -179,7 +180,6 @@ def plot_policy_arrows(env, policy, V=None, title="Politica pi(s)", filename=Non
         plt.tight_layout()
         if filename:
             plt.savefig(filename, dpi=150, bbox_inches="tight")
-        plt.show()
 
 
 def plot_value_and_policy(env, V, policy, suptitle="", filename=None):
@@ -192,7 +192,6 @@ def plot_value_and_policy(env, V, policy, suptitle="", filename=None):
     plt.tight_layout()
     if filename:
         plt.savefig(filename, dpi=150, bbox_inches="tight")
-    plt.show()
 
 
 def smooth_curve(data, window=50):
@@ -284,7 +283,6 @@ def plot_learning_curves(
     plt.tight_layout()
     if filename:
         plt.savefig(filename, dpi=150, bbox_inches="tight")
-    plt.show()
 
 
 def plot_convergence_vi(delta_history, title="Convergencia de Value Iteration", filename=None):
@@ -299,7 +297,6 @@ def plot_convergence_vi(delta_history, title="Convergencia de Value Iteration", 
     plt.tight_layout()
     if filename:
         plt.savefig(filename, dpi=150, bbox_inches="tight")
-    plt.show()
 
 
 def plot_trajectory(env, policy, title="Trajetoria do Agente", max_steps=100, filename=None):
@@ -381,7 +378,6 @@ def plot_trajectory(env, policy, title="Trajetoria do Agente", max_steps=100, fi
     plt.tight_layout()
     if filename:
         plt.savefig(filename, dpi=150, bbox_inches="tight")
-    plt.show()
 
 
 def plot_comparison_bar(eval_results_dict, filename=None):
@@ -421,4 +417,3 @@ def plot_comparison_bar(eval_results_dict, filename=None):
     plt.tight_layout()
     if filename:
         plt.savefig(filename, dpi=150, bbox_inches="tight")
-    plt.show()

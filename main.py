@@ -16,14 +16,15 @@ Uso:
 import numpy as np
 import os
 
-from gridworld_env import (
+from envs.gridworld_env import (
     GridworldEnv,
     create_large_gridworld,
     create_frozen_lake_4x4,
     create_cliff_walking,
 )
-from value_iteration import ValueIterationAgent
-from q_learning import QLearningAgent, DoubleQLearningAgent
+from agents.value_iteration import ValueIterationAgent
+from agents.q_learning import QLearningAgent, DoubleQLearningAgent
+from agents.dqn.dqn_agent import DQNAgent
 from experiment import (
     train_agent,
     evaluate_policy,
@@ -63,6 +64,13 @@ GRID_8x8 = [
     [0, 0, 0, 0, 0, 2, 0, 0],
     [0, 0, 1, 0, 0, 0, 0, 3],
 ]
+
+
+LABEL_Q        = "Q-Learning"
+LABEL_DOUBLE_Q = "Double Q-Learning"
+LABEL_SARSA    = "Expected SARSA"
+LABEL_DQN      = "DQN (NumPy)"
+LABEL_VI       = "Value Iteration"
 
 
 def ensure_output_dir():
@@ -134,9 +142,9 @@ def run_qlearning_experiments():
         all_eval = {}
 
         for agent_type, label in [
-            ("q_learning", "Q-Learning"),
-            ("double_q_learning", "Double Q-Learning"),
-            ("expected_sarsa", "Expected SARSA"),
+            ("q_learning", LABEL_Q),
+            ("double_q_learning", LABEL_DOUBLE_Q),
+            ("expected_sarsa", LABEL_SARSA),
         ]:
             metrics_list, eval_list = run_experiment_multiple_seeds(
                 grid_layout=grid_layout,
@@ -317,9 +325,9 @@ def run_hyperparameter_study():
     }
 
     for agent_type, label in [
-        ("q_learning", "Q-Learning"),
-        ("double_q_learning", "Double Q-Learning"),
-        ("expected_sarsa", "Expected SARSA"),
+        ("q_learning", LABEL_Q),
+        ("double_q_learning", LABEL_DOUBLE_Q),
+        ("expected_sarsa", LABEL_SARSA),
     ]:
         best_result, _ = grid_search_hyperparameters(
             grid_layout=grid_layout,
@@ -380,9 +388,9 @@ def run_exploration_strategy_comparison():
     ]
 
     for agent_type, agent_label in [
-        ("q_learning", "Q-Learning"),
-        ("double_q_learning", "Double Q-Learning"),
-        ("expected_sarsa", "Expected SARSA"),
+        ("q_learning", LABEL_Q),
+        ("double_q_learning", LABEL_DOUBLE_Q),
+        ("expected_sarsa", LABEL_SARSA),
     ]:
         print(f"\n--- {agent_label}: epsilon-greedy vs softmax ---")
 
@@ -445,7 +453,7 @@ def run_final_comparison():
     # Value Iteration (baseline otimo)
     env_vi = GridworldEnv(grid_layout=grid_layout, slip_prob=slip, seed=42)
     vi_agent = ValueIterationAgent(env_vi, gamma=0.99, theta=1e-8)
-    V_vi, policy_vi, iters_vi = vi_agent.run()
+    v_vi, policy_vi, iters_vi = vi_agent.run()
     print(f"\nValue Iteration: Convergiu em {iters_vi} iteracoes")
 
     # Avaliar VI
@@ -490,22 +498,22 @@ def run_final_comparison():
 
     # Comparacao de avaliacao
     final_eval = {
-        "Value Iteration": {
+        LABEL_VI: {
             "mean_reward": vi_eval["mean_reward"],
             "success_rate": vi_eval["success_rate"],
             "mean_steps": vi_eval["mean_steps"],
         },
-        "Q-Learning": {
+        LABEL_Q: {
             "mean_reward": np.mean([e["mean_reward"] for e in q_eval_list]),
             "success_rate": np.mean([e["success_rate"] for e in q_eval_list]),
             "mean_steps": np.mean([e["mean_steps"] for e in q_eval_list]),
         },
-        "Double Q-Learning": {
+        LABEL_DOUBLE_Q: {
             "mean_reward": np.mean([e["mean_reward"] for e in dq_eval_list]),
             "success_rate": np.mean([e["success_rate"] for e in dq_eval_list]),
             "mean_steps": np.mean([e["mean_steps"] for e in dq_eval_list]),
         },
-        "Expected SARSA": {
+        LABEL_SARSA: {
             "mean_reward": np.mean([e["mean_reward"] for e in es_eval_list]),
             "success_rate": np.mean([e["success_rate"] for e in es_eval_list]),
             "mean_steps": np.mean([e["mean_steps"] for e in es_eval_list]),
@@ -528,9 +536,9 @@ def run_final_comparison():
     # Curvas de aprendizado Q vs Double Q
     plot_learning_curves(
         {
-            "Q-Learning": aggregate_metrics(q_metrics_list),
-            "Double Q-Learning": aggregate_metrics(dq_metrics_list),
-            "Expected SARSA": aggregate_metrics(es_metrics_list),
+            LABEL_Q: aggregate_metrics(q_metrics_list),
+            LABEL_DOUBLE_Q: aggregate_metrics(dq_metrics_list),
+            LABEL_SARSA: aggregate_metrics(es_metrics_list),
         },
         title_prefix="Q-Learning vs Double Q-Learning vs Expected SARSA (4x4, slip=0.2)",
         filename=f"{OUTPUT_DIR}/final_learning_curves.png",
@@ -538,7 +546,7 @@ def run_final_comparison():
 
     # Plotar VI como referencia
     plot_value_and_policy(
-        env_vi, V_vi, policy_vi,
+        env_vi, v_vi, policy_vi,
         suptitle="Value Iteration - Solucao Otima (gamma=0.99, slip=0.2)",
         filename=f"{OUTPUT_DIR}/vi_optimal_solution.png",
     )
@@ -569,12 +577,12 @@ def run_benchmark_experiments():
 
         # --- Value Iteration ---
         vi_agent = ValueIterationAgent(env_ref, gamma=0.99, theta=1e-8)
-        V_vi, policy_vi, iters_vi = vi_agent.run()
+        v_vi, policy_vi, iters_vi = vi_agent.run()
         print(f"  Value Iteration: {iters_vi} iteracoes | "
-              f"V(start)={V_vi[env_ref.state_to_idx[env_ref.start_pos]]:.4f}")
+              f"V(start)={v_vi[env_ref.state_to_idx[env_ref.start_pos]]:.4f}")
 
         plot_value_and_policy(
-            env_ref, V_vi, policy_vi,
+            env_ref, v_vi, policy_vi,
             suptitle=f"Value Iteration - {bench_name}",
             filename=f"{OUTPUT_DIR}/vi_{bench_name}.png",
         )
@@ -594,9 +602,9 @@ def run_benchmark_experiments():
         all_eval = {}
 
         for agent_type, label in [
-            ("q_learning",       "Q-Learning"),
-            ("double_q_learning","Double Q-Learning"),
-            ("expected_sarsa",   "Expected SARSA"),
+            ("q_learning",       LABEL_Q),
+            ("double_q_learning", LABEL_DOUBLE_Q),
+            ("expected_sarsa",   LABEL_SARSA),
         ]:
             env_tmp = factory(seed=42)
             metrics_list, eval_list = run_experiment_multiple_seeds(
@@ -657,6 +665,102 @@ def run_benchmark_experiments():
 
 
 # ============================================================
+# PARTE 6: DQN vs Agentes Tabulares
+# ============================================================
+def run_dqn_comparison():
+    print("\n" + "=" * 70)
+    print("PARTE 6: DQN vs AGENTES TABULARES")
+    print("=" * 70)
+
+    benchmarks = [
+        ("4x4_stoch",       GRID_4x4,  0.2),
+        ("frozen_lake_4x4", None,      1/3),   # layout criado via factory abaixo
+        ("cliff_walking",   None,      0.0),
+    ]
+
+    for bench_name, grid_layout, slip in benchmarks:
+        print(f"\n--- {bench_name} ---")
+
+        # Para frozen lake e cliff walking usa as factories para obter
+        # reward_goal/trap/step corretos
+        if bench_name == "frozen_lake_4x4":
+            ref_env = create_frozen_lake_4x4(seed=42)
+        elif bench_name == "cliff_walking":
+            ref_env = create_cliff_walking(seed=42)
+        else:
+            ref_env = GridworldEnv(grid_layout=grid_layout, slip_prob=slip, seed=42)
+
+        grid_layout_used = ref_env.grid.tolist()
+        r_goal = ref_env.reward_goal
+        r_trap = ref_env.reward_trap
+        r_step = ref_env.reward_step
+
+        all_aggregated = {}
+        all_eval = {}
+
+        agents_cfg = [
+            ("q_learning",        LABEL_Q),
+            ("double_q_learning", LABEL_DOUBLE_Q),
+            ("dqn",               LABEL_DQN),
+        ]
+
+        for agent_type, label in agents_cfg:
+            metrics_list, eval_list = run_experiment_multiple_seeds(
+                grid_layout=grid_layout_used,
+                slip_prob=slip,
+                reward_goal=r_goal,
+                reward_trap=r_trap,
+                reward_step=r_step,
+                agent_type=agent_type,
+                alpha=0.1,
+                gamma=0.99,
+                epsilon=1.0,
+                epsilon_min=0.01,
+                epsilon_decay="exponential",
+                epsilon_decay_rate=0.995,
+                num_episodes=NUM_EPISODES,
+                max_steps=MAX_STEPS,
+                seeds=SEEDS,
+                verbose=True,
+            )
+
+            agg = aggregate_metrics(metrics_list)
+            all_aggregated[label] = agg
+            all_eval[label] = {
+                "mean_reward":  np.mean([e["mean_reward"]  for e in eval_list]),
+                "success_rate": np.mean([e["success_rate"] for e in eval_list]),
+                "mean_steps":   np.mean([e["mean_steps"]   for e in eval_list]),
+            }
+            print(
+                f"  {label:20s} | "
+                f"Reward={all_eval[label]['mean_reward']:.3f} | "
+                f"Success={all_eval[label]['success_rate']:.2%} | "
+                f"Steps={all_eval[label]['mean_steps']:.1f}"
+            )
+
+        plot_learning_curves(
+            all_aggregated,
+            title_prefix=f"Tabular vs DQN - {bench_name}",
+            filename=f"{OUTPUT_DIR}/dqn_vs_tabular_curves_{bench_name}.png",
+        )
+        plot_comparison_bar(
+            all_eval,
+            filename=f"{OUTPUT_DIR}/dqn_vs_tabular_eval_{bench_name}.png",
+        )
+
+        # Politica e valor aprendidos pelo DQN
+        dqn_agent = DQNAgent(num_states=ref_env.num_states, seed=42)
+        train_agent(ref_env, dqn_agent, num_episodes=NUM_EPISODES, max_steps=MAX_STEPS)
+        plot_value_and_policy(
+            ref_env,
+            dqn_agent.get_value_function(),
+            dqn_agent.get_policy(),
+            suptitle=f"DQN Final - {bench_name}",
+            filename=f"{OUTPUT_DIR}/dqn_final_{bench_name}.png",
+        )
+
+
+# ============================================================
 # MAIN
 # ============================================================
 if __name__ == "__main__":
@@ -673,6 +777,7 @@ if __name__ == "__main__":
     run_exploration_strategy_comparison()
     run_final_comparison()
     run_benchmark_experiments()
+    run_dqn_comparison()
 
     print("\n" + "=" * 70)
     print("EXPERIMENTOS CONCLUIDOS!")
