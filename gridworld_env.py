@@ -272,6 +272,63 @@ class GridworldEnv:
         print()
 
 
+def create_frozen_lake_4x4(seed=42):
+    """
+    Frozen Lake 4x4 (benchmark OpenAI Gym).
+
+    S F F F
+    F H F H
+    F F F H
+    H F F G
+
+    S=start, F=frozen(empty), H=hole(trap), G=goal
+    slip_prob=0.333 (padrao do Gym: acao pretendida tem 1/3, cada perpendicular 1/3)
+    """
+    layout = [
+        [START, EMPTY, EMPTY, EMPTY],
+        [EMPTY, TRAP,  EMPTY, TRAP ],
+        [EMPTY, EMPTY, EMPTY, TRAP ],
+        [TRAP,  EMPTY, EMPTY, GOAL ],
+    ]
+    return GridworldEnv(grid_layout=layout, slip_prob=1/3, seed=seed)
+
+
+def create_cliff_walking(seed=42):
+    """
+    Cliff Walking 4x12 (Sutton & Barto, Example 6.6).
+
+    . . . . . . . . . . . .
+    . . . . . . . . . . . .
+    . . . . . . . . . . . .
+    S T T T T T T T T T T G
+
+    S=start (linha 3, col 0), G=goal (linha 3, col 11)
+    T=cliff/trap (linha 3, cols 1-10)
+    Ambiente determinístico (slip_prob=0): destaca diferenca entre
+    Q-Learning (rota arriscada beira do precipício) vs SARSA/Expected SARSA
+    (rota segura pela linha de cima).
+    """
+    H, W = 4, 12
+    layout = [[EMPTY] * W for _ in range(H)]
+
+    # Start e goal
+    layout[3][0]  = START
+    layout[3][11] = GOAL
+
+    # Precipício
+    for c in range(1, 11):
+        layout[3][c] = TRAP
+
+    return GridworldEnv(
+        grid_layout=layout,
+        slip_prob=0.0,
+        reward_goal=0.0,
+        reward_trap=-100.0,
+        reward_step=-1.0,
+        seed=seed,
+    )
+
+
 def create_large_gridworld(seed=42):
     """
     Cria um Gridworld 8x8 mais complexo para testes avancados.

@@ -16,7 +16,12 @@ Uso:
 import numpy as np
 import os
 
-from gridworld_env import GridworldEnv, create_large_gridworld
+from gridworld_env import (
+    GridworldEnv,
+    create_large_gridworld,
+    create_frozen_lake_4x4,
+    create_cliff_walking,
+)
 from value_iteration import ValueIterationAgent
 from q_learning import QLearningAgent, DoubleQLearningAgent
 from experiment import (
@@ -540,6 +545,118 @@ def run_final_comparison():
 
 
 # ============================================================
+# PARTE 5: Benchmarks da Literatura (Frozen Lake + Cliff Walking)
+# ============================================================
+def run_benchmark_experiments():
+    print("\n" + "=" * 70)
+    print("PARTE 5: BENCHMARKS DA LITERATURA")
+    print("=" * 70)
+
+    benchmarks = [
+        ("frozen_lake_4x4", create_frozen_lake_4x4),
+        ("cliff_walking",   create_cliff_walking),
+    ]
+
+    for bench_name, factory in benchmarks:
+        print(f"\n{'='*50}")
+        print(f"Benchmark: {bench_name}")
+        print(f"{'='*50}")
+
+        env_ref = factory(seed=42)
+        print(f"  Grid: {env_ref.rows}x{env_ref.cols} | "
+              f"Estados: {env_ref.num_states} | "
+              f"slip_prob: {env_ref.slip_prob}")
+
+        # --- Value Iteration ---
+        vi_agent = ValueIterationAgent(env_ref, gamma=0.99, theta=1e-8)
+        V_vi, policy_vi, iters_vi = vi_agent.run()
+        print(f"  Value Iteration: {iters_vi} iteracoes | "
+              f"V(start)={V_vi[env_ref.state_to_idx[env_ref.start_pos]]:.4f}")
+
+        plot_value_and_policy(
+            env_ref, V_vi, policy_vi,
+            suptitle=f"Value Iteration - {bench_name}",
+            filename=f"{OUTPUT_DIR}/vi_{bench_name}.png",
+        )
+        plot_convergence_vi(
+            vi_agent.delta_history,
+            title=f"Convergencia VI - {bench_name}",
+            filename=f"{OUTPUT_DIR}/vi_convergence_{bench_name}.png",
+        )
+        plot_trajectory(
+            env_ref, policy_vi,
+            title=f"Trajetoria VI - {bench_name}",
+            filename=f"{OUTPUT_DIR}/vi_trajectory_{bench_name}.png",
+        )
+
+        # --- Q-Learning vs Double Q-Learning vs Expected SARSA ---
+        all_aggregated = {}
+        all_eval = {}
+
+        for agent_type, label in [
+            ("q_learning",       "Q-Learning"),
+            ("double_q_learning","Double Q-Learning"),
+            ("expected_sarsa",   "Expected SARSA"),
+        ]:
+            env_tmp = factory(seed=42)
+            metrics_list, eval_list = run_experiment_multiple_seeds(
+                grid_layout=env_tmp.grid.tolist(),
+                slip_prob=env_tmp.slip_prob,
+                reward_goal=env_tmp.reward_goal,
+                reward_trap=env_tmp.reward_trap,
+                reward_step=env_tmp.reward_step,
+                agent_type=agent_type,
+                alpha=0.1,
+                gamma=0.99,
+                epsilon=1.0,
+                epsilon_min=0.01,
+                epsilon_decay="exponential",
+                epsilon_decay_rate=0.995,
+                num_episodes=NUM_EPISODES,
+                max_steps=MAX_STEPS,
+                seeds=SEEDS,
+                verbose=True,
+            )
+
+            agg = aggregate_metrics(metrics_list)
+            all_aggregated[label] = agg
+            all_eval[label] = {
+                "mean_reward":  np.mean([e["mean_reward"]  for e in eval_list]),
+                "success_rate": np.mean([e["success_rate"] for e in eval_list]),
+                "mean_steps":   np.mean([e["mean_steps"]   for e in eval_list]),
+            }
+            print(
+                f"  {label:20s} | Reward={all_eval[label]['mean_reward']:.3f} | "
+                f"Success={all_eval[label]['success_rate']:.2%} | "
+                f"Steps={all_eval[label]['mean_steps']:.1f}"
+            )
+
+        plot_learning_curves(
+            all_aggregated,
+            title_prefix=f"Algoritmos - {bench_name}",
+            filename=f"{OUTPUT_DIR}/benchmark_curves_{bench_name}.png",
+        )
+        plot_comparison_bar(
+            all_eval,
+            filename=f"{OUTPUT_DIR}/benchmark_eval_{bench_name}.png",
+        )
+
+        # Politica final Q-Learning
+        env_ql = factory(seed=42)
+        ql_agent = QLearningAgent(
+            num_states=env_ql.num_states, alpha=0.1, gamma=0.99,
+            epsilon=1.0, epsilon_min=0.01,
+            epsilon_decay="exponential", epsilon_decay_rate=0.995, seed=42,
+        )
+        train_agent(env_ql, ql_agent, num_episodes=NUM_EPISODES, max_steps=MAX_STEPS)
+        plot_value_and_policy(
+            env_ql, ql_agent.get_value_function(), ql_agent.get_policy(),
+            suptitle=f"Q-Learning Final - {bench_name}",
+            filename=f"{OUTPUT_DIR}/qlearning_final_{bench_name}.png",
+        )
+
+
+# ============================================================
 # MAIN
 # ============================================================
 if __name__ == "__main__":
@@ -555,6 +672,7 @@ if __name__ == "__main__":
     run_hyperparameter_study()
     run_exploration_strategy_comparison()
     run_final_comparison()
+    run_benchmark_experiments()
 
     print("\n" + "=" * 70)
     print("EXPERIMENTOS CONCLUIDOS!")
