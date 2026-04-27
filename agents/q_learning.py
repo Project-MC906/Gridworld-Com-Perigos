@@ -19,6 +19,12 @@ class QLearningAgent:
         Numero de estados no ambiente.
     alpha : float
         Taxa de aprendizado.
+    alpha_min : float
+        Piso minimo para alpha quando ha decaimento.
+    alpha_decay : str
+        Estrategia de decaimento de alpha: 'none', 'linear', 'exponential'.
+    alpha_decay_rate : float
+        Taxa de decaimento de alpha para a estrategia exponencial.
     gamma : float
         Fator de desconto.
     epsilon : float
@@ -50,6 +56,9 @@ class QLearningAgent:
         self,
         num_states,
         alpha=0.1,
+        alpha_min=0.01,
+        alpha_decay="none",
+        alpha_decay_rate=1.0,
         gamma=0.99,
         epsilon=1.0,
         epsilon_min=0.01,
@@ -65,6 +74,10 @@ class QLearningAgent:
     ):
         self.num_states = num_states
         self.alpha = alpha
+        self.alpha_start = alpha
+        self.alpha_min = alpha_min
+        self.alpha_decay = alpha_decay
+        self.alpha_decay_rate = alpha_decay_rate
         self.gamma = gamma
         self.epsilon = epsilon
         self.epsilon_start = epsilon
@@ -179,6 +192,15 @@ class QLearningAgent:
             # 'none': temperatura fixa, nao decai
             return
 
+    def decay_alpha(self, episode=None, total_episodes=None):
+        """Aplica decaimento da taxa de aprendizado ao final de cada episodio."""
+        if self.alpha_decay == "exponential":
+            self.alpha = max(self.alpha_min, self.alpha * self.alpha_decay_rate)
+        elif self.alpha_decay == "linear":
+            if total_episodes is not None and total_episodes > 0:
+                decay_per_episode = (self.alpha_start - self.alpha_min) / total_episodes
+                self.alpha = max(self.alpha_min, self.alpha - decay_per_episode)
+
     def get_exploration_value(self):
         """Retorna o parametro de exploracao atual (epsilon ou temperatura)."""
         if self.exploration_strategy == "softmax":
@@ -206,6 +228,9 @@ class ExpectedSARSAAgent:
         self,
         num_states,
         alpha=0.1,
+        alpha_min=0.01,
+        alpha_decay="none",
+        alpha_decay_rate=1.0,
         gamma=0.99,
         epsilon=1.0,
         epsilon_min=0.01,
@@ -221,6 +246,10 @@ class ExpectedSARSAAgent:
     ):
         self.num_states = num_states
         self.alpha = alpha
+        self.alpha_start = alpha
+        self.alpha_min = alpha_min
+        self.alpha_decay = alpha_decay
+        self.alpha_decay_rate = alpha_decay_rate
         self.gamma = gamma
         self.epsilon = epsilon
         self.epsilon_start = epsilon
@@ -326,6 +355,15 @@ class ExpectedSARSAAgent:
                         self.temperature - decay_per_episode,
                     )
 
+    def decay_alpha(self, episode=None, total_episodes=None):
+        """Aplica decaimento da taxa de aprendizado ao final de cada episodio."""
+        if self.alpha_decay == "exponential":
+            self.alpha = max(self.alpha_min, self.alpha * self.alpha_decay_rate)
+        elif self.alpha_decay == "linear":
+            if total_episodes is not None and total_episodes > 0:
+                decay_per_episode = (self.alpha_start - self.alpha_min) / total_episodes
+                self.alpha = max(self.alpha_min, self.alpha - decay_per_episode)
+
     def get_exploration_value(self):
         """Retorna o parametro de exploracao atual (epsilon ou temperatura)."""
         if self.exploration_strategy == "softmax":
@@ -357,6 +395,9 @@ class DoubleQLearningAgent:
         self,
         num_states,
         alpha=0.1,
+        alpha_min=0.01,
+        alpha_decay="none",
+        alpha_decay_rate=1.0,
         gamma=0.99,
         epsilon=1.0,
         epsilon_min=0.01,
@@ -372,6 +413,10 @@ class DoubleQLearningAgent:
     ):
         self.num_states = num_states
         self.alpha = alpha
+        self.alpha_start = alpha
+        self.alpha_min = alpha_min
+        self.alpha_decay = alpha_decay
+        self.alpha_decay_rate = alpha_decay_rate
         self.gamma = gamma
         self.epsilon = epsilon
         self.epsilon_start = epsilon
@@ -489,6 +534,15 @@ class DoubleQLearningAgent:
                         self.temperature_min,
                         self.temperature - decay_per_episode,
                     )
+
+    def decay_alpha(self, episode=None, total_episodes=None):
+        """Aplica decaimento da taxa de aprendizado ao final de cada episodio."""
+        if self.alpha_decay == "exponential":
+            self.alpha = max(self.alpha_min, self.alpha * self.alpha_decay_rate)
+        elif self.alpha_decay == "linear":
+            if total_episodes is not None and total_episodes > 0:
+                decay_per_episode = (self.alpha_start - self.alpha_min) / total_episodes
+                self.alpha = max(self.alpha_min, self.alpha - decay_per_episode)
 
     def get_exploration_value(self):
         """Retorna o parametro de exploracao atual (epsilon ou temperatura)."""

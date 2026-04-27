@@ -314,8 +314,36 @@ def run_hyperparameter_study():
         filename=f"{OUTPUT_DIR}/hp_epsilon_comparison.png",
     )
 
-    # --- 3d. Busca em grade (grid search) ---
-    print("\n--- 3d. Busca em Grade de Hiperparametros (Q-Learning, Double Q, Expected SARSA) ---")
+    # --- 3d. Efeito do Decaimento de Alpha ---
+    print("\n--- 3d. Efeito do Decaimento da Taxa de Aprendizado (alpha) ---")
+    alpha_decay_aggregated = {}
+    alpha_decay_configs = [
+        ("Fixo (alpha=0.3)", "none", 1.0),
+        ("Exp alpha_decay=0.9995", "exponential", 0.9995),
+        ("Exp alpha_decay=0.999", "exponential", 0.999),
+        ("Exp alpha_decay=0.995", "exponential", 0.995),
+    ]
+
+    for label, alpha_decay, alpha_decay_rate in alpha_decay_configs:
+        metrics_list, _ = run_experiment_multiple_seeds(
+            grid_layout=grid_layout, slip_prob=slip,
+            agent_type="q_learning", alpha=0.3, alpha_min=0.05,
+            alpha_decay=alpha_decay, alpha_decay_rate=alpha_decay_rate,
+            gamma=0.99,
+            epsilon=1.0, epsilon_min=0.01,
+            epsilon_decay="exponential", epsilon_decay_rate=0.999,
+            num_episodes=NUM_EPISODES, max_steps=MAX_STEPS, seeds=SEEDS,
+        )
+        alpha_decay_aggregated[label] = aggregate_metrics(metrics_list)
+
+    plot_learning_curves(
+        alpha_decay_aggregated,
+        title_prefix="Efeito do Decaimento da Taxa de Aprendizado (alpha)",
+        filename=f"{OUTPUT_DIR}/hp_alpha_decay_comparison.png",
+    )
+
+    # --- 3e. Busca em grade (grid search) ---
+    print("\n--- 3e. Busca em Grade de Hiperparametros (Q-Learning, Double Q, Expected SARSA) ---")
     search_space = {
         "alpha": [0.05, 0.1, 0.3],
         "gamma": [0.9, 0.99],

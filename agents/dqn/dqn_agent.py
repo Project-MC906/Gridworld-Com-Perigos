@@ -1,5 +1,5 @@
 """
-Agente Deep Q-Network (DQN) implementado do zero com NumPy.
+Agente Deep Q-Network (DQN) implementado do zero com NumPy/CuPy.
 
 Implementa:
 - Rede neural para aproximar Q(s,a)
@@ -15,12 +15,13 @@ Referencias:
 import numpy as np
 from agents.dqn.neural_net import NeuralNetwork
 from agents.dqn.replay_buffer import ReplayBuffer
+from agents.dqn.device import get_array_module, to_numpy
 from envs.gridworld_env import NUM_ACTIONS
 
 
 class DQNAgent:
     """
-    Agente DQN tabular com rede neural NumPy.
+    Agente DQN tabular com rede neural NumPy/CuPy.
 
     Parametros
     ----------
@@ -46,6 +47,8 @@ class DQNAgent:
         Capacidade do replay buffer.
     target_update_freq : int
         A cada quantos passos sincronizar a target network.
+    device : str
+        "auto", "cpu" ou "cuda".
     seed : int or None
     """
 
@@ -62,6 +65,7 @@ class DQNAgent:
         batch_size=64,
         buffer_capacity=10000,
         target_update_freq=100,
+        device="auto",
         seed=42,
         # Parametros ignorados (compatibilidade com interface tabular)
         alpha=None,
@@ -86,13 +90,18 @@ class DQNAgent:
         self.batch_size = batch_size
         self.target_update_freq = target_update_freq
         self.rng = np.random.default_rng(seed)
+        self.xp, self.device = get_array_module(device)
         self._step = 0
+
+        # Cache one-hot em CPU para evitar alocacao repetida.
+        self._identity_cache = np.eye(self.num_states, dtype=np.float32)
 
         # Rede principal (treinada a cada passo)
         self.online_net = NeuralNetwork(
             input_size=num_states,
             hidden_sizes=hidden_sizes,
             output_size=NUM_ACTIONS,
+            xp=self.xp,
             seed=seed,
         )
 
@@ -101,6 +110,7 @@ class DQNAgent:
             input_size=num_states,
             hidden_sizes=hidden_sizes,
             output_size=NUM_ACTIONS,
+            xp=self.xp,
             seed=seed,
         )
         self.target_net.set_weights(self.online_net.get_weights())
@@ -109,17 +119,20 @@ class DQNAgent:
         self.buffer = ReplayBuffer(capacity=buffer_capacity, seed=seed)
 
     def _encode(self, state):
-        """Codifica estado como vetor one-hot."""
-        x = np.zeros(self.num_states)
-        x[state] = 1.0
-        return x
+        """Codifica estado como vetor one-hot em memoria host (CPU)."""
+        return self._identity_cache[state]
+
+    def _to_device(self, array):
+        """Move dados para o backend numerico ativo (CPU/CUDA)."""
+        return self.xp.asarray(array, dtype=self.xp.float32)
 
     def select_action(self, state):
         """Epsilon-greedy sobre a rede online."""
         if self.rng.random() < self.epsilon:
             return self.rng.integers(0, NUM_ACTIONS)
-        q_values = self.online_net.forward(self._encode(state))
-        return int(np.argmax(q_values))
+
+        q_values = self.online_net.forward(self._to_device(self._encode(state)))
+        return int(to_numpy(self.xp.argmax(q_values)))
 
     def update(self, state, action, reward, next_state, done):
         """
@@ -160,43 +173,28 @@ class DQNAgent:
         """
         states, actions, rewards, next_states, dones = self.buffer.sample(self.batch_size)
 
-        # Computar alvos com target network
-        targets_all = np.zeros(self.batch_size)
-        for i in range(self.batch_size):
-            q_next = self.target_net.forward(next_states[i])
-            if dones[i]:
-                targets_all[i] = rewards[i]
-            else:
-                targets_all[i] = rewards[i] + self.gamma * np.max(q_next)
+        states_dev = self._to_device(states)
+        actions_dev = self.xp.asarray(actions, dtype=self.xp.int64)
+        rewards_dev = self._to_device(rewards)
+        next_states_dev = self._to_device(next_states)
+        dones_dev = self._to_device(dones)
 
-        # Acumular gradientes sobre o batch
-        total_loss = 0.0
-        # Zerar gradientes acumulados
-        for layer in self.online_net.layers:
-            if hasattr(layer, 'dW'):
-                layer.dW[:] = 0.0
-                layer.db[:] = 0.0
+        # y = r + gamma * max_a Q_target(s',a) (ou y = r quando done)
+        q_next_all = self.target_net.forward(next_states_dev)
+        max_q_next = self.xp.max(q_next_all, axis=1)
+        targets = rewards_dev + (1.0 - dones_dev) * self.gamma * max_q_next
 
-        # Gradiente medio do batch
-        for i in range(self.batch_size):
-            q_pred_all = self.online_net.forward(states[i])
+        # Treina apenas a acao executada em cada transicao do batch.
+        q_pred_all = self.online_net.forward(states_dev)
+        target_vec = q_pred_all.copy()
+        batch_idx = self.xp.arange(self.batch_size, dtype=self.xp.int64)
+        target_vec[batch_idx, actions_dev] = targets
 
-            # So otimiza Q(s, a_tomada); demais acoes nao contribuem para o gradiente
-            target_vec = q_pred_all.copy()
-            target_vec[actions[i]] = targets_all[i]
-
-            loss, grad_out = self.online_net.mse_loss_and_grad(q_pred_all, target_vec)
-            total_loss += loss
-            self.online_net.backward(grad_out)
-
-            # Acumular gradientes (media sera aplicada no Adam)
-            for layer in self.online_net.layers:
-                if hasattr(layer, 'dW'):
-                    layer.dW /= self.batch_size
-                    layer.db /= self.batch_size
-
+        loss, grad_out = self.online_net.mse_loss_and_grad(q_pred_all, target_vec)
+        self.online_net.zero_grad()
+        self.online_net.backward(grad_out)
         self.online_net.update_adam(lr=self.lr)
-        return total_loss / self.batch_size
+        return float(to_numpy(loss))
 
     def decay_epsilon(self, episode=None, total_episodes=None):
         """Decai epsilon ao final de cada episodio."""
@@ -212,23 +210,16 @@ class DQNAgent:
 
     def get_policy(self):
         """Retorna politica gulosa: argmax_a Q(s,a) para cada estado."""
-        policy = np.zeros(self.num_states, dtype=int)
-        for s in range(self.num_states):
-            q = self.online_net.forward(self._encode(s))
-            policy[s] = int(np.argmax(q))
-        return policy
+        q_table = self.get_q_table()
+        return np.argmax(q_table, axis=1)
 
     def get_value_function(self):
         """Retorna V(s) = max_a Q(s,a) para cada estado."""
-        V = np.zeros(self.num_states)
-        for s in range(self.num_states):
-            q = self.online_net.forward(self._encode(s))
-            V[s] = float(np.max(q))
-        return V
+        q_table = self.get_q_table()
+        return np.max(q_table, axis=1)
 
     def get_q_table(self):
         """Retorna tabela Q(s,a) completa para comparacao com agentes tabulares."""
-        Q = np.zeros((self.num_states, NUM_ACTIONS))
-        for s in range(self.num_states):
-            Q[s] = self.online_net.forward(self._encode(s))
-        return Q
+        states_dev = self._to_device(self._identity_cache)
+        q_values = self.online_net.forward(states_dev)
+        return to_numpy(q_values)

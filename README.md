@@ -14,6 +14,19 @@ Instalar dependencias:
 pip install numpy matplotlib
 ```
 
+## Aceleracao CUDA opcional para DQN
+
+O DQN pode usar GPU via CuPy (sem usar bibliotecas de RL prontas).
+
+1. Instale CuPy compatível com sua versão de CUDA.
+2. Rode o DQN com `device="cuda"` (ou `device="auto"` para fallback em CPU).
+
+Exemplo de instalação (CUDA 12.x):
+
+```bash
+pip install cupy-cuda12x
+```
+
 ## Como executar
 
 ```bash

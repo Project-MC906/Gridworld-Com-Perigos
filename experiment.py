@@ -48,6 +48,7 @@ def train_agent(
         - 'successes': 1 se atingiu o objetivo, 0 caso contrario
         - 'td_errors': media do |TD error| por episodio
         - 'epsilons': valor de epsilon ao final de cada episodio
+        - 'alphas': valor de alpha ao final de cada episodio
     """
     metrics = {
         "rewards": [],
@@ -55,6 +56,7 @@ def train_agent(
         "successes": [],
         "td_errors": [],
         "epsilons": [],
+        "alphas": [],
         "exploration_values": [],
     }
 
@@ -78,6 +80,8 @@ def train_agent(
 
         # Decaimento de epsilon apos o episodio
         agent.decay_epsilon(episode=episode, total_episodes=num_episodes)
+        if hasattr(agent, "decay_alpha"):
+            agent.decay_alpha(episode=episode, total_episodes=num_episodes)
 
         # Verificar se atingiu o objetivo
         agent_pos = env.agent_pos
@@ -89,6 +93,7 @@ def train_agent(
         metrics["successes"].append(success)
         metrics["td_errors"].append(np.mean(td_errors_ep) if td_errors_ep else 0.0)
         metrics["epsilons"].append(getattr(agent, "epsilon", 0.0))
+        metrics["alphas"].append(getattr(agent, "alpha", 0.0))
         metrics["exploration_values"].append(agent.get_exploration_value())
 
         if verbose and (episode + 1) % 500 == 0:
@@ -157,6 +162,9 @@ def run_experiment_multiple_seeds(
     reward_step=-0.04,
     agent_type="q_learning",
     alpha=0.1,
+    alpha_min=0.01,
+    alpha_decay="none",
+    alpha_decay_rate=1.0,
     gamma=0.99,
     epsilon=1.0,
     epsilon_min=0.01,
@@ -168,6 +176,7 @@ def run_experiment_multiple_seeds(
     temperature_decay="exponential",
     temperature_decay_rate=0.995,
     optimistic_init=0.0,
+    dqn_device="auto",
     num_episodes=5000,
     max_steps=200,
     seeds=None,
@@ -220,9 +229,12 @@ def run_experiment_multiple_seeds(
                 "'expected_sarsa' ou 'dqn'."
             )
 
-        agent = AgentClass(
+        agent_kwargs = dict(
             num_states=env.num_states,
             alpha=alpha,
+            alpha_min=alpha_min,
+            alpha_decay=alpha_decay,
+            alpha_decay_rate=alpha_decay_rate,
             gamma=gamma,
             epsilon=epsilon,
             epsilon_min=epsilon_min,
@@ -236,6 +248,13 @@ def run_experiment_multiple_seeds(
             seed=seed,
             optimistic_init=optimistic_init,
         )
+        if agent_type == "dqn":
+            agent_kwargs["device"] = dqn_device
+            agent_kwargs.pop("alpha_min")
+            agent_kwargs.pop("alpha_decay")
+            agent_kwargs.pop("alpha_decay_rate")
+
+        agent = AgentClass(**agent_kwargs)
 
         if verbose:
             print(f"\n--- Seed {seed} ({agent_type}) ---")
@@ -285,6 +304,7 @@ def aggregate_metrics(all_metrics):
     successes_matrix = np.array([m["successes"] for m in all_metrics])
     td_errors_matrix = np.array([m["td_errors"] for m in all_metrics])
     exploration_matrix = np.array([m["exploration_values"] for m in all_metrics])
+    alphas_matrix = np.array([m.get("alphas", [0.0] * num_episodes) for m in all_metrics])
 
     return {
         "rewards_mean": np.mean(rewards_matrix, axis=0),
@@ -296,6 +316,8 @@ def aggregate_metrics(all_metrics):
         "td_errors_std": np.std(td_errors_matrix, axis=0),
         "exploration_mean": np.mean(exploration_matrix, axis=0),
         "exploration_std": np.std(exploration_matrix, axis=0),
+        "alphas_mean": np.mean(alphas_matrix, axis=0),
+        "alphas_std": np.std(alphas_matrix, axis=0),
         "num_episodes": num_episodes,
     }
 

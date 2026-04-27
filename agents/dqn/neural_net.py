@@ -17,29 +17,39 @@ import numpy as np
 class Linear:
     """Camada densa: y = Wx + b"""
 
-    def __init__(self, in_features, out_features, seed=None):
+    def __init__(self, in_features, out_features, xp=np, seed=None):
+        self.xp = xp
         rng = np.random.default_rng(seed)
         # Inicializacao He (adequada para ReLU)
         std = np.sqrt(2.0 / in_features)
-        self.W = rng.normal(0.0, std, (out_features, in_features))
-        self.b = np.zeros(out_features)
+        weights = rng.normal(0.0, std, (out_features, in_features)).astype(np.float32)
+        self.W = self.xp.asarray(weights)
+        self.b = self.xp.zeros(out_features, dtype=self.xp.float32)
 
         # Gradientes
-        self.dW = np.zeros_like(self.W)
-        self.db = np.zeros_like(self.b)
+        self.dW = self.xp.zeros_like(self.W)
+        self.db = self.xp.zeros_like(self.b)
 
         # Cache para backprop
         self._input = None
 
     def forward(self, x):
+        x = x.astype(self.W.dtype, copy=False)
         self._input = x
-        return self.W @ x + self.b
+        if x.ndim == 1:
+            return self.W @ x + self.b
+        return x @ self.W.T + self.b
 
     def backward(self, grad_out):
         """Retorna gradiente em relacao a entrada."""
-        self.dW = np.outer(grad_out, self._input)
-        self.db = grad_out.copy()
-        return self.W.T @ grad_out
+        if grad_out.ndim == 1:
+            self.dW = self.xp.outer(grad_out, self._input)
+            self.db = grad_out.copy()
+            return self.W.T @ grad_out
+
+        self.dW = grad_out.T @ self._input
+        self.db = self.xp.sum(grad_out, axis=0)
+        return grad_out @ self.W
 
     def params(self):
         return [(self.W, self.dW), (self.b, self.db)]
@@ -74,17 +84,20 @@ class NeuralNetwork:
         Tamanhos das camadas ocultas.
     output_size : int
         Numero de acoes (saidas Q(s,a)).
+    xp : module
+        Backend numerico (numpy ou cupy).
     seed : int or None
     """
 
-    def __init__(self, input_size, hidden_sizes, output_size, seed=42):
+    def __init__(self, input_size, hidden_sizes, output_size, xp=np, seed=42):
+        self.xp = xp
         self.layers = []
         rng = np.random.default_rng(seed)
         sizes = [input_size] + hidden_sizes + [output_size]
 
         for i in range(len(sizes) - 1):
             layer_seed = int(rng.integers(0, 2**31))
-            self.layers.append(Linear(sizes[i], sizes[i + 1], seed=layer_seed))
+            self.layers.append(Linear(sizes[i], sizes[i + 1], xp=self.xp, seed=layer_seed))
             # Adiciona ReLU em todas as camadas exceto a ultima
             if i < len(sizes) - 2:
                 self.layers.append(ReLU())
@@ -94,8 +107,8 @@ class NeuralNetwork:
         self._t = 0  # passo global do Adam
 
     def forward(self, x):
-        """Passagem para frente. x: vetor 1D (input_size,)"""
-        out = x.astype(float)
+        """Passagem para frente. x pode ser 1D (estado) ou 2D (batch)."""
+        out = self.xp.asarray(x, dtype=self.xp.float32)
         for layer in self.layers:
             out = layer.forward(out)
         return out
@@ -114,9 +127,16 @@ class NeuralNetwork:
         d_loss/d_pred = 2*(pred - target) / N
         """
         diff = predictions - targets
-        loss = np.mean(diff ** 2)
-        grad = 2.0 * diff / len(diff)
+        loss = self.xp.mean(diff ** 2)
+        grad = 2.0 * diff / diff.size
         return loss, grad
+
+    def zero_grad(self):
+        """Zera gradientes acumulados das camadas lineares."""
+        for layer in self.layers:
+            if isinstance(layer, Linear):
+                layer.dW[...] = 0.0
+                layer.db[...] = 0.0
 
     def update_adam(self, lr=1e-3, beta1=0.9, beta2=0.999, eps=1e-8):
         """Atualiza pesos com otimizador Adam."""
@@ -129,15 +149,15 @@ class NeuralNetwork:
                 pid = id(param)
                 if pid not in self._adam_states:
                     self._adam_states[pid] = {
-                        "m": np.zeros_like(param),
-                        "v": np.zeros_like(param),
+                        "m": self.xp.zeros_like(param),
+                        "v": self.xp.zeros_like(param),
                     }
                 state = self._adam_states[pid]
                 state["m"] = beta1 * state["m"] + (1 - beta1) * grad
                 state["v"] = beta2 * state["v"] + (1 - beta2) * grad ** 2
                 m_hat = state["m"] / (1 - beta1 ** self._t)
                 v_hat = state["v"] / (1 - beta2 ** self._t)
-                param -= lr * m_hat / (np.sqrt(v_hat) + eps)
+                param -= lr * m_hat / (self.xp.sqrt(v_hat) + eps)
 
     def get_weights(self):
         """Retorna copia de todos os pesos para uso na target network."""
@@ -152,6 +172,6 @@ class NeuralNetwork:
         idx = 0
         for layer in self.layers:
             if isinstance(layer, Linear):
-                layer.W[:] = weights[idx][0]
-                layer.b[:] = weights[idx][1]
+                layer.W[:] = self.xp.asarray(weights[idx][0])
+                layer.b[:] = self.xp.asarray(weights[idx][1])
                 idx += 1

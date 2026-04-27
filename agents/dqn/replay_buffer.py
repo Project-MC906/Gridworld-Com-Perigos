@@ -39,11 +39,11 @@ class ReplayBuffer:
         indices = self.rng.choice(len(self.buffer), size=batch_size, replace=False)
         batch = [self.buffer[i] for i in indices]
 
-        states      = np.array([t[0] for t in batch], dtype=float)
-        actions     = np.array([t[1] for t in batch], dtype=int)
-        rewards     = np.array([t[2] for t in batch], dtype=float)
-        next_states = np.array([t[3] for t in batch], dtype=float)
-        dones       = np.array([t[4] for t in batch], dtype=float)
+        states = np.array([t[0] for t in batch], dtype=np.float32)
+        actions = np.array([t[1] for t in batch], dtype=np.int64)
+        rewards = np.array([t[2] for t in batch], dtype=np.float32)
+        next_states = np.array([t[3] for t in batch], dtype=np.float32)
+        dones = np.array([t[4] for t in batch], dtype=np.float32)
 
         return states, actions, rewards, next_states, dones
 
